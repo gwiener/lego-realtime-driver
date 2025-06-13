@@ -40,6 +40,12 @@ app.get("/token", async (req, res) => {
   }
 });
 
+// API route for driving commands
+app.post("/api/drive", express.json(), (req, res) => {
+  console.log("Drive command received:", JSON.stringify(req.body));
+  res.status(200).json({ message: "Drive command received" });
+});
+
 // Render the React client
 app.use("*", async (req, res, next) => {
   const url = req.originalUrl;

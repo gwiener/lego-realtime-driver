@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
 
-const functionDescription = `
-Call this function to display to the user a plan for driving the remote controlled vehicle.
-`;
-
 const instructions = `
 You are a helpful assistant that provides driving plans for remote controlled vehicles.
 When the user asks for a driving plan, you will first design a plan, and then call the \`display_driving_plan\` function to show the plan to the user.
@@ -29,51 +25,63 @@ Do not read out the plan aloud after planning, since it is already displayed to 
 Just describe it briefly with the main points of the plan, and ask for confirmation or changes.
 `;
 
+const commandType = {
+  action: {
+    type: "string",
+    description: "Operator to perform, one of 'FD', 'BK', 'LT', 'RT', 'WT'",
+  },
+  argument: {
+    type: "number",
+    description: `
+Argument for the action,
+power percent (0-100) for 'FD', 'BK',
+angle in degrees for 'LT', 'RT',
+and wait time in milliseconds for 'WT'
+`,
+  }
+}
+
+const commandsType = {
+  type: "array",
+  description: "Array of driving commands",
+  items: {
+    type: "object",
+    description: "A driving command",
+    properties: commandType,
+  },
+}
+
+const planParameters = {
+  type: "object",
+  strict: true,
+  properties: {
+    plan_name: {
+      type: "string",
+      description: "A brief description of the driving plan",
+    },
+    commands: commandsType,
+  },
+  required: ["plan_name", "commands"],
+}
+
 const sessionUpdate = {
-  type: "session.update",
-  session: {
+type: "session.update",
+session: {
     instructions: instructions,
     speed: 1.2,
     tools: [
       {
         type: "function",
         name: "display_driving_plan",
-        description: functionDescription,
-        parameters: {
-          type: "object",
-          strict: true,
-          properties: {
-            plan_name: {
-              type: "string",
-              description: "A brief description of the driving plan",
-            },
-            commands: {
-              type: "array",
-              description: "Array of driving commands",
-              items: {
-                type: "object",
-                description: "A driving command",
-                properties: {
-                  action: {
-                    type: "string",
-                    description: "Operator to perform, one of 'FD', 'BK', 'LT', 'RT', 'WT'",
-                  },
-                  argument: {
-                    type: "number",
-                    description: `
-                      Argument for the action,
-                      power percent (0-100) for 'FD', 'BK',
-                      angle in degrees for 'LT', 'RT',
-                      and wait time in milliseconds for 'WT'
-                    `,
-                  }
-                },
-              },
-            },
-          },
-          required: ["plan_name", "commands"],
-        },
+        description: `Call this function to display to the user a plan for driving the remote controlled vehicle.`,
+        parameters: planParameters,
       },
+      {
+        type: "function",
+        name: "execute_driving_plan",
+        description: `Call this function to execute the driving plan for the remote controlled vehicle.`,
+        parameters: planParameters,
+      }
     ],
     tool_choice: "auto",
   },
@@ -95,6 +103,18 @@ function FunctionCallOutput({ functionCallOutput }) {
       <div className="flex flex-col gap-1">{commandList}</div>
     </div>
   );
+}
+
+// Sends a POST request with JSON payload to /api/drive
+async function sendDrivePlan(payload) {
+  const response = await fetch('/api/drive', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
 }
 
 export default function ToolPanel({
@@ -120,21 +140,26 @@ export default function ToolPanel({
       mostRecentEvent.response.output
     ) {
       mostRecentEvent.response.output.forEach((output) => {
-        if (
-          output.type === "function_call" &&
-          output.name === "display_driving_plan"
-        ) {
-          setFunctionCallOutput(output);
-          setTimeout(() => {
-            sendClientEvent({
-              type: "response.create",
-              response: {
-                instructions: `
-                  ask the user if the plan is good, and if not, ask for changes.
-                `,
-              },
+        if (output.type === "function_call") {
+          if (output.name === "display_driving_plan") {
+            setFunctionCallOutput(output);
+            setTimeout(() => {
+              sendClientEvent({
+                type: "response.create",
+                response: {
+                  instructions: `ask the user if the plan is good, and if not, ask for changes.`,
+                },
+              });
+            }, 500);
+          } else if (output.name === "execute_driving_plan") {
+            const payload = JSON.parse(output.arguments);
+            sendDrivePlan(payload).then((response) => {
+              console.log("Drive command response:", response);
+              setFunctionCallOutput(null); // Clear the output after execution
+            }).catch((error) => {
+              console.error("Error executing driving plan:", error);
             });
-          }, 500);
+          }
         }
       });
     }
