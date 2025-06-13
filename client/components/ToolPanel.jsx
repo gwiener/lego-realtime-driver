@@ -1,35 +1,77 @@
 import { useEffect, useState } from "react";
 
 const functionDescription = `
-Call this function when a user asks for a color palette.
+Call this function to display to the user a plan for driving the remote controlled vehicle.
+`;
+
+const instructions = `
+You are a helpful assistant that provides driving plans for remote controlled vehicles.
+When the user asks for a driving plan, you will first design a plan, and then call the \`display_driving_plan\` function to show the plan to the user.
+The driving plan should include a name and an array of commands.
+Each command should have an action (one of 'FD', 'BK', 'LT', 'RT', 'WT') and an argument.
+The action 'FD' means set the power to drive forward, 'BK' means set the power to drive backward,
+'LT' means turn left (in degrees), 'RT' means turn right (in degrees), 
+and 'WT' means wait for a specified time in milliseconds.
+The argument for 'FD' and 'BK' should be a power percentage (0-100),
+for 'LT' and 'RT' it should be an angle in degrees, and for 'WT' it should be a wait time in milliseconds.
+Notice that the FD and BK commands do not instruct the vehicle to move for a given time, they just set the power.
+Therefore, the driving plan should include a wait command after each FD or BK command to ensure the vehicle moves for a specified duration.
+The vehicle moves 50 cm/sec. at 100% power, and linearly less at lower power, e.g 25 cm/sec. at 50% power.
+The vehicle has a tank-like rotation mechanism, so when giving a turn command, such as 'LT' or 'RT', 
+the vehicle will turn in place without moving forward or backward.
+After turning left or right, you need to issue another command to move forward or backward,
+since the vehicle will not automatically continue moving in the same power it was running before the turn.
+There is no need to issue a command to stop the vehicle at the end of the plan,
+as the vehicle will stop automatically after the last command is executed.
+When asked, provide a driving plan that includes a name and an array of commands.
+Do not reflect on the driving plan, just create it and call the \`display_driving_plan\` function.
+Do not read out the plan aloud after planning, since it is already displayed to the user.
+Just describe it briefly with the main points of the plan, and ask for confirmation or changes.
 `;
 
 const sessionUpdate = {
   type: "session.update",
   session: {
+    instructions: instructions,
+    speed: 1.2,
     tools: [
       {
         type: "function",
-        name: "display_color_palette",
+        name: "display_driving_plan",
         description: functionDescription,
         parameters: {
           type: "object",
           strict: true,
           properties: {
-            theme: {
+            plan_name: {
               type: "string",
-              description: "Description of the theme for the color scheme.",
+              description: "A brief description of the driving plan",
             },
-            colors: {
+            commands: {
               type: "array",
-              description: "Array of five hex color codes based on the theme.",
+              description: "Array of driving commands",
               items: {
-                type: "string",
-                description: "Hex color code",
+                type: "object",
+                description: "A driving command",
+                properties: {
+                  action: {
+                    type: "string",
+                    description: "Operator to perform, one of 'FD', 'BK', 'LT', 'RT', 'WT'",
+                  },
+                  argument: {
+                    type: "number",
+                    description: `
+                      Argument for the action,
+                      power percent (0-100) for 'FD', 'BK',
+                      angle in degrees for 'LT', 'RT',
+                      and wait time in milliseconds for 'WT'
+                    `,
+                  }
+                },
               },
             },
           },
-          required: ["theme", "colors"],
+          required: ["plan_name", "commands"],
         },
       },
     ],
@@ -38,27 +80,19 @@ const sessionUpdate = {
 };
 
 function FunctionCallOutput({ functionCallOutput }) {
-  const { theme, colors } = JSON.parse(functionCallOutput.arguments);
+  const { plan_name, commands } = JSON.parse(functionCallOutput.arguments);
 
-  const colorBoxes = colors.map((color) => (
-    <div
-      key={color}
-      className="w-full h-16 rounded-md flex items-center justify-center border border-gray-200"
-      style={{ backgroundColor: color }}
-    >
-      <p className="text-sm font-bold text-black bg-slate-100 rounded-md p-2 border border-black">
-        {color}
-      </p>
+  const commandList = commands.map((command, idx) => (
+    <div key={idx} className="flex items-center gap-2">
+      <span className="font-bold">{command.action}</span>
+      <span>{command.argument}</span>
     </div>
   ));
 
   return (
     <div className="flex flex-col gap-2">
-      <p>Theme: {theme}</p>
-      {colorBoxes}
-      <pre className="text-xs bg-gray-100 rounded-md p-2 overflow-x-auto">
-        {JSON.stringify(functionCallOutput, null, 2)}
-      </pre>
+      <h3 className="font-bold">Driving Plan: {plan_name}</h3>
+      <div className="flex flex-col gap-1">{commandList}</div>
     </div>
   );
 }
@@ -88,7 +122,7 @@ export default function ToolPanel({
       mostRecentEvent.response.output.forEach((output) => {
         if (
           output.type === "function_call" &&
-          output.name === "display_color_palette"
+          output.name === "display_driving_plan"
         ) {
           setFunctionCallOutput(output);
           setTimeout(() => {
@@ -96,9 +130,8 @@ export default function ToolPanel({
               type: "response.create",
               response: {
                 instructions: `
-                ask for feedback about the color palette - don't repeat 
-                the colors, just ask if they like the colors.
-              `,
+                  ask the user if the plan is good, and if not, ask for changes.
+                `,
               },
             });
           }, 500);
@@ -117,12 +150,12 @@ export default function ToolPanel({
   return (
     <section className="h-full w-full flex flex-col gap-4">
       <div className="h-full bg-gray-50 rounded-md p-4">
-        <h2 className="text-lg font-bold">Color Palette Tool</h2>
+        <h2 className="text-lg font-bold">Driving Plan Tool</h2>
         {isSessionActive ? (
           functionCallOutput ? (
             <FunctionCallOutput functionCallOutput={functionCallOutput} />
           ) : (
-            <p>Ask for advice on a color palette...</p>
+            <p>Display a driving plan...</p>
           )
         ) : (
           <p>Start the session to use this tool...</p>
