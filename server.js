@@ -1,3 +1,4 @@
+import { TankCtrl } from "./tank.js";
 import express from "express";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
@@ -13,6 +14,13 @@ const vite = await createViteServer({
   appType: "custom",
 });
 app.use(vite.middlewares);
+
+const tankCtrl = new TankCtrl();
+tankCtrl.discover().then(() => {
+  console.log("Tank controller initialized and ready to use.");
+}).catch((error) => {
+  console.error("Error initializing tank controller:", error);
+});
 
 // API route for token generation
 app.get("/token", async (req, res) => {
@@ -41,9 +49,15 @@ app.get("/token", async (req, res) => {
 });
 
 // API route for driving commands
-app.post("/api/drive", express.json(), (req, res) => {
+app.post("/api/drive", express.json(), async (req, res) => {
   console.log("Drive command received:", JSON.stringify(req.body));
-  res.status(200).json({ message: "Drive command received" });
+  try {
+    tankCtrl.run(req.body.commands); // start driving but don't await it
+    res.status(200).json({ message: "Drive command received" });
+  } catch (error) {
+    console.error("Error processing drive command:", error);
+    return res.status(500).json({ error: "Failed to process drive command" });
+  }
 });
 
 // Render the React client
